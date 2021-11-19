@@ -3,5 +3,6 @@ project on GWAS for adaptation to the environment in the grass species Festuca r
 
 
 ## scripts
-1.prepare_phenotypes.R
-2.prepare_genotypes.R
+
+1. 1.prepare_phenotypes.R
+2. 2.prepare_genotypes.R
