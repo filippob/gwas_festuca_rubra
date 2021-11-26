@@ -5,7 +5,7 @@ library("tidyverse")
 library("data.table")
 
 ## read and transform
-print("reading in the genotypic data ...")
+writeLines(" - reading in the genotypic data ...")
 unfiltered_genotypes <- readxl::read_xlsx("unfiltered.xlsx", sheet = 1, col_names = TRUE)
 
 ## get matrix of genotypes (0/1 coded)
@@ -16,22 +16,22 @@ print(paste(nrow(M), "unfiltered markers have been read"))
 colnames(M) <- gsub("_.*$","",colnames(M))
 
 ## match between genotypes ans phenotypes
-print("matching with phenotypes ...")
+writeLines(" - matching with phenotypes ...")
 phenotypes <- fread("phenotypes.csv")
 vec <- colnames(M) %in% phenotypes$sample
 M <- M[,vec]
 print(paste(ncol(M), "samples left after matching genotypes and phenotypes"))
 
 ## get marker position on contig
-print("getting the position of SSR - start position")
+writeLines(" - getting the position of SSR - start position")
 M <- unfiltered_genotypes[,c(1:4,7:10)] %>% bind_cols(M)
 M <- M %>% 
-  separate(`...3`, into = c("start_pos","end_pos"), sep = "-") %>% 
-  rename(contig = `LOCUS...2`, sequence = `...5`, length = lenght) %>% 
+  separate(`....3`, into = c("start_pos","end_pos"), sep = "-") %>% 
+  rename(contig = `LOCUS...2`, sequence = `....5`, length = lenght) %>% 
   select(-c(`LOCUS...1`,`LOC-MOT`))
 
 ## data cleaning
-print("cleaning data: removing NODE contig and SSR with missing position")
+writeLines(" - cleaning data: removing NODE contig and SSR with missing position")
 M <- M %>% filter(contig != "NODE", !is.na(start_pos))
 print(paste(nrow(M), "markers left after cleaning"))
 
@@ -41,7 +41,7 @@ M <- M[vec,]
 print(paste(nrow(M),"markers left after filtering for frequency"))
 
 ## write out data
-print("writing out the data ... ")
+writeLines(" - writing out the data ... ")
 fwrite(x = M, file = "filtered_genotypes.csv", sep = ",", col.names = TRUE)
 
 print("DONE!")
