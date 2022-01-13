@@ -1,7 +1,5 @@
-## R script to carry out a GWAS analysis with the package rrBLUP
-## kinship matrix used to account for population structure in the data
-## input: Plink .raw and .map files + phenotype file
-# run as Rscript --vanilla gwas_rrblup.R genotype_file=path_to_genotypes snp_map=path_to_map phenotype_file=path_to_phenotypes trait=trait_name_in_phenotype_file trait_label=label_to_use_for_trait
+## R script to carry out a GWAS analysis with base GLM
+# run as Rscript --vanilla gwas_glm.R
 
 # INPUT CONFIGURATION MANAGEMENT ------------------------------------------
 args = commandArgs(trailingOnly=TRUE)
@@ -19,7 +17,8 @@ if (length(args) == 1){
     base_folder = '~/Documents/zuzana_festuca_rubra',
     genotype_file = 'filtered_genotypes.csv',
     phenotype_file = 'phenotypes.csv',
-    trait = 'warmer',
+    trait = 'wetter',
+    npc = 4, ## n. of PCs to include
     force_overwrite = FALSE
   ))
   
@@ -36,15 +35,10 @@ library("data.table")
 
 print("GWAS using GLM for binary traits")
 
-# genotype_file = "introduction_to_gwas/6.steps/dogs_imputed.raw"
-# snp_map = "introduction_to_gwas/6.steps/dogs_imputed.map"
-# phenotype_file = "introduction_to_gwas/6.steps/data/dogs_phenotypes.txt"
-# trait = "phenotype"
-# trait_label = "cleft_lip "
-
 print(paste("genotype file name:",config$genotype_file))
 print(paste("phenotype file name:",config$phenotype_file))
 print(paste("trait:",config$trait))
+print(paste("number of principal components to include:",config$npc))
 
 dataset = basename(config$genotype_file)
 
@@ -55,7 +49,7 @@ genotypes <- fread(config$genotype_file, header = TRUE)
 snp_matrix = genotypes[,-c(1:7)]
 print(paste(nrow(snp_matrix),"records read from the phenotype file",sep=" "))
 SNP_INFO <- genotypes[,c(1,2,4)]
-SNP_INFO <- mutate(SNP_INFO, snp = paste(contig,start_pos,sequence,sep="_")) %>% select(c(contig,snp,start_pos))
+SNP_INFO <- mutate(SNP_INFO, snp = paste(contig,start_pos,sequence,sep="_")) %>% dplyr::select(c(contig,snp,start_pos))
 names(SNP_INFO) <- c("Chr","SNP","Pos")
 
 matg <- t(as.matrix(snp_matrix))
@@ -82,14 +76,14 @@ if ((ncol(matg)) != nrow(SNP_INFO)) {
 ################
 ## filtering
 ################
-vec <- which(colSums(matg)/nrow(matg) < 0.95)
+vec <- which(colSums(matg)/nrow(matg) < 0.95 & colSums(matg)/nrow(matg) > 0.025)
 matg <- matg[,vec]
 SNP_INFO <- SNP_INFO[vec,]
 
 ### phenotypes
 print("now reading in the binary phenotype ...")
 phenotypes <- fread(config$phenotype_file)
-phenotypes <- select(phenotypes, c(sample, !!as.name(config$trait)))
+phenotypes <- dplyr::select(phenotypes, c(sample, !!as.name(config$trait)))
 head(phenotypes)
 print(paste(nrow(phenotypes),"records read from the phenotype file",sep=" "))
 
@@ -109,7 +103,7 @@ K <- K[vec,vec, with=FALSE]
 writeLines(' - calculating principal components')
 pc <- prcomp(matg)
 phenotypes <- phenotypes %>% dplyr::rename(phenotype = !!as.name(config$trait)) %>% mutate(phenotype = as.factor(phenotype))
-n <- 3 ## n. of principal components to use for GWAS
+n <- config$npc ## n. of principal components to use for GWAS
 phenotypes <- cbind.data.frame(phenotypes,pc$x[,1:n])
 
 
@@ -139,10 +133,10 @@ for(i in 1:ncol(matg)) {
 ###########
 print(" - writing out results and figures ...")
 res <- res %>% inner_join(SNP_INFO, by = "SNP")
-res <- select(res,c(SNP,Chr,Pos,effect,pvalue))
+res <- dplyr::select(res,c(SNP,Chr,Pos,effect,pvalue))
 
 fname <- paste(dataset,config$trait,"GWAS_glm.results", sep="_")
-fwrite(x = res, file = fname)
+fwrite(x = res, file = paste(config$base_folder,"/results/",fname,sep=""))
 
 res$effect <- NULL
 names(res) <- c("SNP","CHR","BP","P")
@@ -156,16 +150,19 @@ temp <- temp %>% inner_join(pos, by = "CHR")
 temp <- arrange(temp,desc(N))
 temp$CHR <- factor(temp$CHR, levels = unique(temp$CHR))
 
-p <- ggplot(temp, aes(x = BP, y = -log(P)))  + geom_jitter(aes(color = P))
-p <- p + facet_wrap(~CHR)
-p <- p + theme(axis.text.x = element_text(angle = 90), text = element_text(size = 6))
+p <- ggplot(temp, aes(x = CHR, y = -log(P)))  + geom_jitter(aes(color = P), width = 0.5)
+# p <- p + facet_wrap(~CHR)
+p <- p + theme(
+  axis.text.x = element_text(angle = 90), text = element_text(size = 6)
+        )
 # p
 
 fname = paste(dataset,config$trait,"manhattan_glm.pdf",sep="_")
-ggsave(filename = fname, plot = p, device = "pdf", width = 9, height = 9)
+ggsave(filename = paste(config$base_folder,"/results/",fname,sep=""), plot = p, device = "pdf", width = 9, height = 9)
 
 ## qq-plot
-png(paste(dataset,config$trait,"qqplot_glm.png",sep="_"), width = 600, height = 600)
+fname = paste(dataset,config$trait,"qqplot_glm.png",sep="_")
+png(paste(config$base_folder,"/results/",fname,sep=""), width = 600, height = 600)
 qq(res$P)
 dev.off()
 
