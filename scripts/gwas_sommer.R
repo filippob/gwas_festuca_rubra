@@ -45,7 +45,7 @@ print(paste("number of principal components to include:",config$npc))
 dataset = basename(config$genotype_file)
 
 ## READING DATA
-print("now reading in the data ...")
+writeLines(" - now reading in the genotypic data ...")
 ### genotypes
 genotypes <- fread(config$genotype_file, header = TRUE)
 print(paste(nrow(genotypes),"records read from the genotype file",sep=" "))
@@ -65,6 +65,7 @@ rm(temp)
 ################
 ## subsampling
 ################
+writeLines(" - now subsampling the marker loci ...")
 vec <- sample(1:ncol(matg),2000)
 matg <- matg[,vec]
 SNP_INFO <- SNP_INFO[vec,]
@@ -74,68 +75,61 @@ summary(colSums(matg)/nrow(matg))
 ################
 ## filtering
 ################
+writeLines(" - now filtering the marker data for frequency ...")
 vec <- which(colSums(matg)/nrow(matg) < 0.95 & colSums(matg)/nrow(matg) > 0.025)
 matg <- matg[,vec]
 SNP_INFO <- SNP_INFO[vec,]
+print(paste("n. of markers left:", nrow(SNP_INFO)))
 
 ### phenotypes
+writeLines(" - now reading in the phenotypes ...")
 phenotypes <- fread(config$phenotype_file)
 # phenotypes <- phenotypes[,c(1,3)]
 print(paste(nrow(phenotypes),"records read from the phenotype file",sep=" "))
 
-phenotypes <- phenotypes[phenotypes$id %in% snp_matrix$IID,]
+phenotypes <- phenotypes[phenotypes$sample %in% rownames(matg),]
 print(paste(nrow(phenotypes),"records read from the phenotype file after alignment with genotypes",sep=" "))
 
+## create sample IDs (pure numbers are misinterpreted by sommer: numeric instead of strings, wrong matrix indexing)
+phenotypes <- phenotypes %>% mutate(id = paste("s",sample,sep="_"))
+
 ## PC's
-genotypes <- fread("filtered_genotypes.csv", header = TRUE)
-snp_matrix = genotypes[,-c(1:7)]
-matg <- t(as.matrix(snp_matrix))
+writeLines(" - calculating principal components of the genotype matrix")
 pc <- prcomp(matg)
-names(pc)
-pc$x[1:20,1:10]
 
-
-# SNP_INFO <- bind_cols(SNP_INFO,as.data.frame(t(X)))
-
-print(paste(nrow(SNP_INFO),"SNPs read from the map file",sep=" "))
-
-if ((ncol(snp_matrix)-6) != nrow(SNP_INFO)) {
-  
-  stop("!! N. of SNPs in the map file not equal to the number of genotyped SNPs in the genotype file")
-  
-} else print("N. of SNPs in the map and genotype files is the same: this is correct!!")
-
-
+## add first n principal components to the file of phenotypes
+phenotypes <- cbind.data.frame(phenotypes,pc$x[,1:config$npc])
 
 ## kinship matrix
-print("Calculating the kinship matrix")
-K <-A.mat(X)
+writeLines(" - calculating the kinship matrix")
+K <- fread("kinship_vr.csv", header = TRUE)
+names(K) <- phenotypes$id
+K <- as.matrix(K)
+rownames(K) <- colnames(K)
 
-vec <- colnames(K) %in% phenotypes$id
-K <- K[vec,vec]
+## marker matrix
+X <- as.matrix(matg)
+rownames(X) <- phenotypes$id
 
-# SNP_INFO <- as.data.frame(SNP_INFO)
-# SNP_INFO <- SNP_INFO[,c(TRUE,TRUE,TRUE,vec)]
-
-print("producing the heatmap kinship matrix ...")
-pdf(paste(dataset,"_kinship_heatmap",".pdf",sep=""))
-heatmap(K)
-dev.off()
+## subset phenotypes
+P <- phenotypes %>% dplyr::rename(phenotype = !!as.name(config$trait))
+covs = paste("PC", seq(1,config$npc),sep="")
+P <- dplyr::select(P, c(id, phenotype, all_of(covs)))
 
 ###################
 ## Running the GWAS
 ###################
-phenotypes <- phenotypes %>% dplyr::rename(phenotype = !!as.name(trait))
-
+writeLines(" - running the GWAS")
+## build model
 fmod <- as.formula(
   paste("phenotype",
-        gsub(",","+",covariates),
+        paste(covs, collapse = "+"),
         sep = " ~ "))
 
 mix_mod <- GWAS(fmod,
                 random = ~vs(id, Gu=K),
                 rcov = ~units,
-                data = phenotypes,
+                data = P,
                 M = X,
                 gTerm = "u:id", 
                 verbose = TRUE)
@@ -143,27 +137,43 @@ mix_mod <- GWAS(fmod,
 ###########
 ### RESULTS
 ###########
-print("writing out results and figures ...")
+writeLines(" - writing out results and figures ...")
 ms <- as.data.frame(mix_mod$scores)
-ms$snp <-gsub("_[A-Z]{1}$","",rownames(ms))
+ms$marker <-gsub("_[A-Z]{1}$","",rownames(ms))
 
 # convert -log(p) back to p-values
 p <- 10^((-ms$phenotype))
 
-mapf <-merge(SNP_INFO, ms, by="snp", all.x = TRUE);
+mapf <-merge(SNP_INFO, ms, by="marker", all.x = TRUE);
 mapf$pvalue <- p
 mapf <- filter(mapf, phenotype < Inf)
-png(paste(dataset,trait_label,"manhattan_sommer.png",sep="_"))
-sommer::manhattan(mapf, pch=20,cex=.75, PVCN = "phenotype")
-dev.off()
 
-## rename P to log_p (as it is) and add the column with p-values
-names(mapf)[4] <- "log_p"
-fname <- paste(dataset,trait_label,"GWAS_sommer.results", sep="_")
-fwrite(x = mapf, file = fname)
+fname <- paste(dataset,config$trait,"GWAS_sommer.results", sep="_")
+fwrite(x = rename(mapf, log_pval = phenotype), file = paste(config$base_folder,"/results/",fname,sep=""))
+
+## plot
+temp <- filter(mapf, pvalue < 0.05)
+pos <- temp %>%
+  group_by(Chrom) %>%
+  summarise(N =n()) %>%
+  arrange(desc(N))
+temp <- temp %>% inner_join(pos, by = "Chrom")
+temp <- arrange(temp,desc(N))
+temp$Chrom <- factor(temp$Chrom, levels = unique(temp$Chrom))
+
+p <- ggplot(temp, aes(x = Chrom, y = -log(pvalue)))  + geom_jitter(aes(color = pvalue), width = 0.5)
+# p <- p + facet_wrap(~CHR)
+p <- p + theme(
+  axis.text.x = element_text(angle = 90), text = element_text(size = 6)
+)
+# p
+
+fname = paste(dataset,config$trait,"manhattan_sommer.pdf",sep="_")
+ggsave(filename = paste(config$base_folder,"/results/",fname,sep=""), plot = p, device = "pdf", width = 9, height = 9)
 
 ## qq-plot
-png(paste(dataset,trait_label,"qqplot_sommer.png",sep="_"), width = 600, height = 600)
+fname = paste(dataset,config$trait,"qqplot_sommer.png",sep="_")
+png(paste(config$base_folder,"/results/",fname,sep=""), width = 600, height = 600)
 qqman::qq(mapf$pvalue)
 dev.off()
 
