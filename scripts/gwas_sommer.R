@@ -19,7 +19,7 @@ if (length(args) == 1){
     base_folder = '~/Documents/zuzana_festuca_rubra',
     genotype_file = 'filtered_genotypes.csv',
     phenotype_file = 'phenotypes.csv',
-    trait = 'warmer',
+    trait = 'wetter',
     npc = 4, ## n. of PCs to include
     force_overwrite = FALSE
   ))
