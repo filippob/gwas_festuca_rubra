@@ -25,7 +25,8 @@ if (length(args) == 1) {
     normalise = FALSE, ## n. of PCs to include
     plots = TRUE, ## should plots be plotted out
     test_split = 0.8, ## proportion used as training/testing
-    force_overwrite = FALSE
+    force_overwrite = FALSE,
+    alternative_model = TRUE
   ))
 }
 
@@ -49,6 +50,7 @@ SNP_INFO <- genotypes %>%
   dplyr::select(-c(start_pos,end_pos)) %>%
   rename(marker = marker_name, Chrom = contig)
 
+print(paste("N. of markers read in: ", nrow(SNP_INFO)))
 temp <- genotypes[,-c(1:7,ncol(genotypes)), with = FALSE]
 matg <- t(as.matrix(temp))
 colnames(matg) <- SNP_INFO$marker
@@ -62,7 +64,7 @@ writeLines(" - now subsampling the marker loci ...")
 vec <- sample(1:ncol(matg),2000)
 matg <- matg[,vec]
 SNP_INFO <- SNP_INFO[vec,]
-summary(colSums(matg)/nrow(matg))
+# summary(colSums(matg)/nrow(matg))
 ####
 
 ################
@@ -74,9 +76,13 @@ matg <- matg[,vec]
 SNP_INFO <- SNP_INFO[vec,]
 print(paste("n. of markers left:", nrow(SNP_INFO)))
 
+nsamples = nrow(matg)
+nmarkers = nrow(SNP_INFO)
+
 #################
 ### phenotypes
-print("now reading in the binary phenotype ...")
+writeLines(" - now reading in the phenotype ...")
+print(paste("selected trait:", config$trait))
 phenotypes <- fread(config$phenotype_file)
 phenotypes <- dplyr::select(phenotypes, c(sample, !!as.name(config$trait)))
 head(phenotypes)
@@ -93,10 +99,12 @@ phenotypes <- mutate(phenotypes, !!as.name(config$trait) := factor(!!as.name(con
 # Scale data
 if (config$normalise == TRUE) {
  
+  print("normalising the marker data")
   preprocessParams <- preProcess(matg, method = c("center", "scale"))
   matg <- predict(preprocessParams, matg) 
 }
 
+### CARET
 ### data partition
 inTrain <- createDataPartition(
   y = phenotypes$warmer,
@@ -135,10 +143,13 @@ accuracy = confm$overall['Accuracy']
 kappa = confm$overall['Kappa']
 TPR = confm$byClass['Sensitivity']
 TNR = confm$byClass['Specificity']
+print(paste("overall accuracy", accuracy))
 print(confm$table)
 
 res = data.frame("trait"=config$trait,
                  "train_split"=config$test_split,
+                 "nsamples"=nsamples,
+                 "nmarkers"=nmarkers,
                  "normalise"=ifelse(config$normalise,"yes","no"),
                  "lambda"=best_lambda,
                  "accuracy"=accuracy,
@@ -147,17 +158,19 @@ res = data.frame("trait"=config$trait,
                  "TNR"=TNR,
                  "model"="caret")
 
-fname = paste(config$base_folder, "results_lass.csv", sep="/")
+wwriteLines(" - saving results to file")
+fname = paste(config$base_folder, "results_lasso.csv", sep="/")
 if(file.exists(fname)) {
   
   fwrite(x = res, file = fname, append = TRUE)
 } else fwrite(x = res, file = fname)
 
 ## MODEL COEFFICIENTS ----------------------------------------------------------
+writeLines(" - extracting model coefficients")
 lasso_coefs = as.data.frame.matrix(coef(lasso_fit$finalModel, lasso_fit$finalModel$lambdaOpt))
 lasso_coefs = filter(lasso_coefs, s1 != 0, !(row.names(lasso_coefs) %in% c("(Intercept)")))
 
-
+wwriteLines(" - saving model coefficients to 'dictionary'")
 fname = paste(config$base_folder, "dict_coefs.RData", sep="/")
 
 for (name in rownames(lasso_coefs)) {
@@ -187,58 +200,69 @@ for (name in rownames(lasso_coefs)) {
 # lasso_model <- glmnet(x = matg, y = y, alpha = 1, family = "binomial")
 # plot(lasso_model)
 
-### data partition
-inTrain <- createDataPartition(
-  y = phenotypes$warmer,
-  ## the outcome data are needed
-  p = config$test_split,
-  ## The percentage of data in the
-  ## training set
-  list = FALSE
-)
-
-X_train <- matg[inTrain, ]
-X_test <- matg[-inTrain, ]
-y_train <- select(phenotypes[inTrain,], all_of(config$trait)) %>% pull()
-y_test <- select(phenotypes[-inTrain], all_of(config$trait)) %>% pull()
-
-#perform k-fold cross-validation to find optimal lambda value
-cv_model <- cv.glmnet(x = X_train, y = y_train, alpha = 1, nfolds = 5, type.measure = "class", family = "binomial")
-plot(cv_model)
-
-#find optimal lambda value that minimizes test MSE
-best_lambda <- cv_model$lambda.min
-print(best_lambda)
-
-#find coefficients of best model
-best_model <- glmnet(x = X_train, y = y_train, alpha = 1, lambda = best_lambda, family = "binomial")
-lasso_coefs = as.data.frame.matrix(coef(best_model))
-lasso_coefs = filter(lasso_coefs, s0 != 0)
-
-y_predicted <- predict(best_model, s = best_lambda, newx = X_test, type = "class")
-y_pred = as.factor(y_predicted[,1])
-confm <- confusionMatrix(data = y_pred, reference = y_test)
-
-best_lambda = best_lambda
-accuracy = confm$overall['Accuracy']
-kappa = confm$overall['Kappa']
-TPR = confm$byClass['Sensitivity']
-TNR = confm$byClass['Specificity']
-print(confm$table)
-
-res = data.frame("trait"=config$trait,
-                 "train_split"=config$test_split,
-                 "normalise"=ifelse(config$normalise,"yes","no"),
-                 "lambda"=best_lambda,
-                 "accuracy"=accuracy,
-                 "kappa"=kappa,
-                 "TPR"=TPR,
-                 "TNR"=TNR,
-                 "model"="glmnet")
-
-fname = paste(config$base_folder, "results_lass.csv", sep="/")
-if(file.exists(fname)) {
+if (config$alternative_model == TRUE) {
   
-  fwrite(x = res, file = fname, append = TRUE)
-} else fwrite(x = res, file = fname)
+  writeLines(" - running alternative implementation of Lasso-penalised logistic regression")
+  
+  ### data partition
+  inTrain <- createDataPartition(
+    y = phenotypes$warmer,
+    ## the outcome data are needed
+    p = config$test_split,
+    ## The percentage of data in the
+    ## training set
+    list = FALSE
+  )
+  
+  X_train <- matg[inTrain, ]
+  X_test <- matg[-inTrain, ]
+  y_train <- select(phenotypes[inTrain,], all_of(config$trait)) %>% pull()
+  y_test <- select(phenotypes[-inTrain], all_of(config$trait)) %>% pull()
+  
+  #perform k-fold cross-validation to find optimal lambda value
+  cv_model <- cv.glmnet(x = X_train, y = y_train, alpha = 1, nfolds = 5, type.measure = "class", family = "binomial")
+  plot(cv_model)
+  
+  #find optimal lambda value that minimizes test MSE
+  best_lambda <- cv_model$lambda.min
+  print(paste("best lambda value is: ", best_lambda))
+  
+  #find coefficients of best model
+  best_model <- glmnet(x = X_train, y = y_train, alpha = 1, lambda = best_lambda, family = "binomial")
+  lasso_coefs = as.data.frame.matrix(coef(best_model))
+  lasso_coefs = filter(lasso_coefs, s0 != 0, !(row.names(lasso_coefs) %in% c("(Intercept)")))
+  
+  y_predicted <- predict(best_model, s = best_lambda, newx = X_test, type = "class")
+  y_pred = as.factor(y_predicted[,1])
+  confm <- confusionMatrix(data = y_pred, reference = y_test)
+  
+  best_lambda = best_lambda
+  accuracy = confm$overall['Accuracy']
+  kappa = confm$overall['Kappa']
+  TPR = confm$byClass['Sensitivity']
+  TNR = confm$byClass['Specificity']
+  print(confm$table)
+  
+  res = data.frame("trait"=config$trait,
+                   "train_split"=config$test_split,
+                   "nsamples"=nsamples,
+                   "nmarkers"=nmarkers,
+                   "normalise"=ifelse(config$normalise,"yes","no"),
+                   "lambda"=best_lambda,
+                   "accuracy"=accuracy,
+                   "kappa"=kappa,
+                   "TPR"=TPR,
+                   "TNR"=TNR,
+                   "model"="glmnet")
+  
+  fname = paste(config$base_folder, "results_lasso_glmnet.csv", sep="/")
+  if(file.exists(fname)) {
+    
+    fwrite(x = res, file = fname, append = TRUE)
+  } else fwrite(x = res, file = fname)
+  
+}
+
+print("DONE!!")
+
 
