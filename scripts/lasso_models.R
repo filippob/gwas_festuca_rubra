@@ -21,7 +21,7 @@ if (length(args) == 1) {
     base_folder = '~/Documents/zuzana_festuca_rubra',
     genotype_file = 'filtered_genotypes.csv',
     phenotype_file = 'phenotypes.csv',
-    trait = 'warmer',
+    trait = 'wetter',
     normalise = FALSE, ## n. of PCs to include
     plots = TRUE, ## should plots be plotted out
     test_split = 0.8, ## proportion used as training/testing
@@ -60,10 +60,10 @@ rm(temp)
 ################
 ## subsampling
 ################
-writeLines(" - now subsampling the marker loci ...")
-vec <- sample(1:ncol(matg),2000)
-matg <- matg[,vec]
-SNP_INFO <- SNP_INFO[vec,]
+# writeLines(" - now subsampling the marker loci ...")
+# vec <- sample(1:ncol(matg),2000)
+# matg <- matg[,vec]
+# SNP_INFO <- SNP_INFO[vec,]
 # summary(colSums(matg)/nrow(matg))
 ####
 
@@ -106,8 +106,9 @@ if (config$normalise == TRUE) {
 
 ### CARET
 ### data partition
+
 inTrain <- createDataPartition(
-  y = phenotypes$warmer,
+  y = dplyr::select(phenotypes, !!as.name(config$trait)) %>% pull(),
   ## the outcome data are needed
   p = config$test_split,
   ## The percentage of data in the
@@ -122,7 +123,7 @@ y_test <- select(phenotypes[-inTrain], all_of(config$trait)) %>% pull()
 
 ## FIT THE MODEL ----------------------------------------------------------
 # Create and fit Lasso and Ridge objects
-parameters <- seq(0, 1, 0.01)
+parameters <- seq(0, 1.5, 0.01)
 
 lasso_fit <- train(y= y_train,
              x = X_train,
@@ -158,7 +159,7 @@ res = data.frame("trait"=config$trait,
                  "TNR"=TNR,
                  "model"="caret")
 
-wwriteLines(" - saving results to file")
+writeLines(" - saving results to file")
 fname = paste(config$base_folder, "results_lasso.csv", sep="/")
 if(file.exists(fname)) {
   
@@ -170,7 +171,7 @@ writeLines(" - extracting model coefficients")
 lasso_coefs = as.data.frame.matrix(coef(lasso_fit$finalModel, lasso_fit$finalModel$lambdaOpt))
 lasso_coefs = filter(lasso_coefs, s1 != 0, !(row.names(lasso_coefs) %in% c("(Intercept)")))
 
-wwriteLines(" - saving model coefficients to 'dictionary'")
+writeLines(" - saving model coefficients to 'dictionary'")
 fname = paste(config$base_folder, "dict_coefs.RData", sep="/")
 
 for (name in rownames(lasso_coefs)) {
@@ -206,7 +207,7 @@ if (config$alternative_model == TRUE) {
   
   ### data partition
   inTrain <- createDataPartition(
-    y = phenotypes$warmer,
+    y = dplyr::select(phenotypes, !!as.name(config$trait)) %>% pull(),
     ## the outcome data are needed
     p = config$test_split,
     ## The percentage of data in the
@@ -220,7 +221,7 @@ if (config$alternative_model == TRUE) {
   y_test <- select(phenotypes[-inTrain], all_of(config$trait)) %>% pull()
   
   #perform k-fold cross-validation to find optimal lambda value
-  cv_model <- cv.glmnet(x = X_train, y = y_train, alpha = 1, nfolds = 5, type.measure = "class", family = "binomial")
+  cv_model <- cv.glmnet(x = X_train, y = y_train, alpha = 1, nfolds = 10, type.measure = "class", family = "binomial")
   plot(cv_model)
   
   #find optimal lambda value that minimizes test MSE
@@ -255,7 +256,7 @@ if (config$alternative_model == TRUE) {
                    "TNR"=TNR,
                    "model"="glmnet")
   
-  fname = paste(config$base_folder, "results_lasso_glmnet.csv", sep="/")
+  fname = paste(config$base_folder, "results_lasso.csv", sep="/")
   if(file.exists(fname)) {
     
     fwrite(x = res, file = fname, append = TRUE)
