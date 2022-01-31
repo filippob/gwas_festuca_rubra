@@ -91,7 +91,7 @@ phenotypes <- mutate(phenotypes, !!as.name(config$trait) := factor(!!as.name(con
 
 ## PREPARING THE DATA ----------------------------------------------------------
 # Scale data
-if (normalise == TRUE) {
+if (config$normalise == TRUE) {
  
   preprocessParams <- preProcess(matg, method = c("center", "scale"))
   matg <- predict(preprocessParams, matg) 
@@ -129,43 +129,69 @@ print(paste0('Lasso best parameters: ' , lasso_fit$finalModel$lambdaOpt))
 ## MAKE PREDICTIONS ----------------------------------------------------------
 predictions_lasso <- lasso_fit %>% predict(X_test)
 confm = confusionMatrix(data = predictions_lasso, reference = y_test)
-names(confm)
 
 best_lambda = lasso_fit$finalModel$lambdaOpt
 accuracy = confm$overall['Accuracy']
 kappa = confm$overall['Kappa']
 TPR = confm$byClass['Sensitivity']
 TNR = confm$byClass['Specificity']
-confm$table
+print(confm$table)
+
+res = data.frame("trait"=config$trait,
+                 "train_split"=config$test_split,
+                 "normalise"=ifelse(config$normalise,"yes","no"),
+                 "lambda"=best_lambda,
+                 "accuracy"=accuracy,
+                 "kappa"=kappa,
+                 "TPR"=TPR,
+                 "TNR"=TNR,
+                 "model"="caret")
+
+fname = paste(config$base_folder, "results_lass.csv", sep="/")
+if(file.exists(fname)) {
+  
+  fwrite(x = res, file = fname, append = TRUE)
+} else fwrite(x = res, file = fname)
 
 ## MODEL COEFFICIENTS ----------------------------------------------------------
 lasso_coefs = as.data.frame.matrix(coef(lasso_fit$finalModel, lasso_fit$finalModel$lambdaOpt))
-lasso_coefs = filter(lasso_coefs, s1 != 0)
-nrow(lasso_coefs)
-
-dict_coefs = c("q" = 1, "w" = 0, "d" = 2)
-dict_coefs["q"] = dict_coefs["q"] + 1
-dict_coefs["h"] = 1
+lasso_coefs = filter(lasso_coefs, s1 != 0, !(row.names(lasso_coefs) %in% c("(Intercept)")))
 
 
+fname = paste(config$base_folder, "dict_coefs.RData", sep="/")
 
 for (name in rownames(lasso_coefs)) {
-  
     
-    dict_coefs[]
+  if(file.exists(fname)) {
+    
+    load(fname)
+    if (name %in% names(dict_coefs)) {
+      
+      dict_coefs[name] = dict_coefs[name] + 1
+    } else dict_coefs[name] = 1
+  } else {
+    
+    dict_coefs = c(NULL)
+    if (name %in% names(dict_coefs)) {
+      
+      dict_coefs[name] = dict_coefs[name] + 1
+    } else dict_coefs[name] = 1
+  }
+  save(dict_coefs, file = fname)
 }
+
 
 ####
 ## ALERNATIVE APPROACH
 ###
-lasso_model <- glmnet(x = matg, y = y, alpha = 1, family = "binomial")
-plot(lasso_model)
+# lasso_model <- glmnet(x = matg, y = y, alpha = 1, family = "binomial")
+# plot(lasso_model)
 
 ### data partition
 inTrain <- createDataPartition(
   y = phenotypes$warmer,
   ## the outcome data are needed
-  p = .80,
+  p = config$test_split,
   ## The percentage of data in the
   ## training set
   list = FALSE
@@ -182,7 +208,7 @@ plot(cv_model)
 
 #find optimal lambda value that minimizes test MSE
 best_lambda <- cv_model$lambda.min
-best_lambda
+print(best_lambda)
 
 #find coefficients of best model
 best_model <- glmnet(x = X_train, y = y_train, alpha = 1, lambda = best_lambda, family = "binomial")
@@ -191,5 +217,28 @@ lasso_coefs = filter(lasso_coefs, s0 != 0)
 
 y_predicted <- predict(best_model, s = best_lambda, newx = X_test, type = "class")
 y_pred = as.factor(y_predicted[,1])
-confusionMatrix(data = y_pred, reference = y_test)
+confm <- confusionMatrix(data = y_pred, reference = y_test)
+
+best_lambda = best_lambda
+accuracy = confm$overall['Accuracy']
+kappa = confm$overall['Kappa']
+TPR = confm$byClass['Sensitivity']
+TNR = confm$byClass['Specificity']
+print(confm$table)
+
+res = data.frame("trait"=config$trait,
+                 "train_split"=config$test_split,
+                 "normalise"=ifelse(config$normalise,"yes","no"),
+                 "lambda"=best_lambda,
+                 "accuracy"=accuracy,
+                 "kappa"=kappa,
+                 "TPR"=TPR,
+                 "TNR"=TNR,
+                 "model"="glmnet")
+
+fname = paste(config$base_folder, "results_lass.csv", sep="/")
+if(file.exists(fname)) {
+  
+  fwrite(x = res, file = fname, append = TRUE)
+} else fwrite(x = res, file = fname)
 
