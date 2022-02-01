@@ -22,9 +22,11 @@ if (length(args) == 1) {
     genotype_file = 'filtered_genotypes.csv',
     phenotype_file = 'phenotypes.csv',
     trait = 'wetter',
-    normalise = FALSE, ## n. of PCs to include
+    npc = 4, ## n. of PCs to include
+    normalise = TRUE, ## n. of PCs to include
     plots = TRUE, ## should plots be plotted out
     test_split = 0.8, ## proportion used as training/testing
+    nfolds = 5,
     force_overwrite = FALSE,
     alternative_model = TRUE
   ))
@@ -94,6 +96,22 @@ print(paste(nrow(phenotypes),"records read from the phenotype file after alignme
 ## convert score to factor
 phenotypes <- mutate(phenotypes, !!as.name(config$trait) := factor(!!as.name(config$trait)))
 
+#################
+## kinship matrix
+writeLines(' - reading and preparing the kinship matrix')
+K <- fread("kinship_gower.csv", sep=",", header = TRUE)
+vec <- colnames(K) %in% phenotypes$sample
+K <- K[vec,vec, with=FALSE]
+
+#########################
+## Principal Components
+#########################
+writeLines(' - calculating principal components')
+pc <- prcomp(matg)
+n <- config$npc ## n. of principal components to use for Lasso
+# rownames(pc$x) == rownames(matg)
+## add PCs to the feature matrix
+if (n > 0) matg <- cbind(matg,pc$x[,1:n])
 
 ## PREPARING THE DATA ----------------------------------------------------------
 # Scale data
@@ -221,7 +239,7 @@ if (config$alternative_model == TRUE) {
   y_test <- select(phenotypes[-inTrain], all_of(config$trait)) %>% pull()
   
   #perform k-fold cross-validation to find optimal lambda value
-  cv_model <- cv.glmnet(x = X_train, y = y_train, alpha = 1, nfolds = 10, type.measure = "class", family = "binomial")
+  cv_model <- cv.glmnet(x = X_train, y = y_train, alpha = 1, nfolds = config$nfolds, type.measure = "class", family = "binomial")
   plot(cv_model)
   
   #find optimal lambda value that minimizes test MSE

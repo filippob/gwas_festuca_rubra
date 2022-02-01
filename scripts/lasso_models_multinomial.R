@@ -21,7 +21,7 @@ if (length(args) == 1) {
     base_folder = '~/Documents/zuzana_festuca_rubra',
     genotype_file = 'filtered_genotypes.csv',
     phenotype_file = 'phenotypes.csv',
-    trait = 'wetter',
+    trait = 'warm_wet',
     npc = 4, ## n. of PCs to include
     normalise = FALSE, ## n. of PCs to include
     plots = TRUE, ## should plots be plotted out
@@ -124,7 +124,7 @@ if (config$normalise == TRUE) {
 
 ### CARET
 ### data partition
-
+writeLines(" - partitioning the data ")
 inTrain <- createDataPartition(
   y = dplyr::select(phenotypes, !!as.name(config$trait)) %>% pull(),
   ## the outcome data are needed
@@ -141,6 +141,7 @@ y_test <- select(phenotypes[-inTrain], all_of(config$trait)) %>% pull()
 
 ## FIT THE MODEL ----------------------------------------------------------
 # Create and fit Lasso and Ridge objects
+writeLines(" - fitting the Lasso-penalised regression model")
 parameters <- seq(0, 1, 0.005)
 
 lasso_fit <- train(y= y_train,
@@ -280,7 +281,7 @@ if (config$alternative_model == TRUE) {
                    "nfolds"=config$nfolds,
                    "model"="glmnet")
   
-  fname = paste(config$base_folder, "results_lasso.csv", sep="/")
+  fname = paste(config$base_folder, "results_lasso_multinom.csv", sep="/")
   if(file.exists(fname)) {
     
     fwrite(x = res, file = fname, append = TRUE)
