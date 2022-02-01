@@ -98,7 +98,7 @@ phenotypes <- mutate(phenotypes, !!as.name(config$trait) := factor(!!as.name(con
 ## PREPARING THE DATA ----------------------------------------------------------
 # Scale data
 if (config$normalise == TRUE) {
- 
+  
   print("normalising the marker data")
   preprocessParams <- preProcess(matg, method = c("center", "scale"))
   matg <- predict(preprocessParams, matg) 
@@ -126,10 +126,10 @@ y_test <- select(phenotypes[-inTrain], all_of(config$trait)) %>% pull()
 parameters <- seq(0, 1.5, 0.01)
 
 lasso_fit <- train(y= y_train,
-             x = X_train,
-             method = 'glmnet', 
-             tuneGrid = expand.grid(alpha = 1, lambda = parameters),
-             metric = "Accuracy"
+                   x = X_train,
+                   method = 'glmnet', 
+                   tuneGrid = expand.grid(alpha = 1, lambda = parameters),
+                   metric = "Accuracy"
 )
 
 print(paste0('Lasso best parameters: ' , lasso_fit$finalModel$lambdaOpt))
@@ -175,7 +175,7 @@ writeLines(" - saving model coefficients to 'dictionary'")
 fname = paste(config$base_folder, "dict_coefs.RData", sep="/")
 
 for (name in rownames(lasso_coefs)) {
-    
+  
   if(file.exists(fname)) {
     
     load(fname)
@@ -265,5 +265,3 @@ if (config$alternative_model == TRUE) {
 }
 
 print("DONE!!")
-
-
