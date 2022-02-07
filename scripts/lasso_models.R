@@ -32,13 +32,21 @@ if (length(args) == 1) {
   ))
 }
 
+print("-------------------------------")
+print("## CONFIGURATION PARAMETERS ##")
+print("-------------------------------")
+writeLines(paste(" - trait is:", config$trait))
+writeLines(paste(" - model implementation is:", config$model))
+writeLines(paste(" - n. of PCs:", config$npc))
+writeLines(paste(" - normalisation:", ifelse(config$normalise, "yes", "no")))
+print("-------------------------------")
+
 # SETUP -------------------------------------------------------------------
 #if not installed, use package remotes, function install_gitlab()
 library("caret")
 library("glmnet")
 library("tidyverse")
 library("data.table")
-
 
 ## READING DATA ------------------------------------------------------------
 writeLines(" - now reading in the genotypic data ...")
