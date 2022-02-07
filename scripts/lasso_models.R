@@ -28,7 +28,7 @@ if (length(args) == 1) {
     test_split = 0.8, ## proportion used as training/testing
     nfolds = 5,
     force_overwrite = FALSE,
-    model = "caret"
+    model = "glmnet"
   ))
 }
 
@@ -264,9 +264,7 @@ if (config$model == "glmnet") {
   
   #find coefficients of best model
   best_model <- glmnet(x = X_train, y = y_train, alpha = 1, lambda = best_lambda, family = "binomial")
-  lasso_coefs = as.data.frame.matrix(coef(best_model))
-  lasso_coefs = filter(lasso_coefs, s0 != 0, !(row.names(lasso_coefs) %in% c("(Intercept)")))
-  0
+  
   y_predicted <- predict(best_model, s = best_lambda, newx = X_test, type = "class")
   y_pred = as.factor(y_predicted[,1])
   confm <- confusionMatrix(data = y_pred, reference = y_test)
@@ -297,6 +295,33 @@ if (config$model == "glmnet") {
     fwrite(x = res, file = fname, append = TRUE)
   } else fwrite(x = res, file = fname)
   
+  ## MODEL COEFFICIENTS ----------------------------------------------------------
+  writeLines(" - extracting model coefficients")
+  lasso_coefs = as.data.frame.matrix(coef(best_model))
+  lasso_coefs = filter(lasso_coefs, s0 != 0, !(row.names(lasso_coefs) %in% c("(Intercept)")))
+  
+  writeLines(" - saving model coefficients to 'dictionary'")
+  fname = paste(config$base_folder, "dict_coefs.RData", sep="/")
+  
+  for (name in rownames(lasso_coefs)) {
+    
+    if(file.exists(fname)) {
+      
+      load(fname)
+      if (name %in% names(dict_coefs)) {
+        
+        dict_coefs[name] = dict_coefs[name] + 1
+      } else dict_coefs[name] = 1
+    } else {
+      
+      dict_coefs = c(NULL)
+      if (name %in% names(dict_coefs)) {
+        
+        dict_coefs[name] = dict_coefs[name] + 1
+      } else dict_coefs[name] = 1
+    }
+    save(dict_coefs, file = fname)
+  }
 }
 
 print("DONE!!")
