@@ -17,7 +17,7 @@ if (length(args) == 1){
     base_folder = '~/Documents/zuzana_festuca_rubra',
     genotype_file = 'filtered_genotypes.csv',
     phenotype_file = 'phenotypes.csv',
-    trait = 'targetTemp',
+    trait = 'targetMois',
     npc = 4, ## n. of PCs to include
     force_overwrite = FALSE
   ))
@@ -116,7 +116,7 @@ res = data.frame("SNP"=NULL, "effect"=NULL,"pvalue"=NULL)
 
 for(i in 1:ncol(matg)) {
   
-  if (i%%10 == 0) print(paste("analysing SNP n.",i))
+  if (i%%100 == 0) print(paste("analysing SNP n.",i))
   df$snp <- matg[,i]
   snp_name <- colnames(matg)[i]
   

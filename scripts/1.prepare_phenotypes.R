@@ -6,6 +6,7 @@ library("data.table")
 
 ## parameters
 exclude_target_locality = c("Lavisdalen","Ulvehaugen") ## vector or NULL
+keep_shifted_only = FALSE
 
 ## read and transform
 print("reading in the phenotypic data ...")
@@ -17,12 +18,13 @@ metadata <- metadata %>%
          original_temperature = `original Temperature`,
          original_moisture = `original moisture`,
          locality_target = `locality target`) %>% 
-  filter(`shifted populations` == 4) %>%
   mutate(local_foreign = as.factor(local_foreign),
          wetter = ifelse(wetter == 2,1,wetter),
          warm_wet = interaction(warmer,wetter),
          temp_moist = interaction(original_temperature, original_moisture))
 
+if (keep_shifted_only) metadata <- filter(metadata, `shifted populations` == 4)
+  
 if (length(exclude_target_locality) > 0) {
   
   writeLines(" - removing unnecessary samples ")
