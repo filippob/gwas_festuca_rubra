@@ -21,14 +21,15 @@ if (length(args) == 1) {
     base_folder = '~/Documents/zuzana_festuca_rubra',
     genotype_file = 'filtered_genotypes.csv',
     phenotype_file = 'phenotypes.csv',
-    trait = 'wetter',
+    trait = 'targetTemp',
     npc = 0, ## n. of PCs to include
     normalise = FALSE, ## n. of PCs to include
     plots = TRUE, ## should plots be plotted out
     test_split = 0.8, ## proportion used as training/testing
     nfolds = 5,
     force_overwrite = FALSE,
-    model = "glmnet"
+    model = "glmnet",
+    type = "gaussian" ## "gaussian" or "binomial"
   ))
 }
 
@@ -36,6 +37,7 @@ print("-------------------------------")
 print("## CONFIGURATION PARAMETERS ##")
 print("-------------------------------")
 writeLines(paste(" - trait is:", config$trait))
+writeLines(paste(" - type of trait is:", config$type))
 writeLines(paste(" - model implementation is:", config$model))
 writeLines(paste(" - n. of PCs:", config$npc))
 writeLines(paste(" - normalisation:", ifelse(config$normalise, "yes", "no")))
@@ -47,6 +49,8 @@ library("caret")
 library("glmnet")
 library("tidyverse")
 library("data.table")
+
+if (config$type == "binomial") {metric = "class"} else {metric = "mse"}
 
 ## READING DATA ------------------------------------------------------------
 writeLines(" - now reading in the genotypic data ...")
@@ -70,11 +74,11 @@ rm(temp)
 ################
 ## subsampling
 ################
-# writeLines(" - now subsampling the marker loci ...")
-# vec <- sample(1:ncol(matg),2000)
-# matg <- matg[,vec]
-# SNP_INFO <- SNP_INFO[vec,]
-# summary(colSums(matg)/nrow(matg))
+writeLines(" - now subsampling the marker loci ...")
+vec <- sample(1:ncol(matg),2000)
+matg <- matg[,vec]
+SNP_INFO <- SNP_INFO[vec,]
+summary(colSums(matg)/nrow(matg))
 ####
 
 ################
@@ -101,8 +105,8 @@ print(paste(nrow(phenotypes),"records read from the phenotype file",sep=" "))
 phenotypes <- phenotypes[phenotypes$sample %in% row.names(matg),]
 print(paste(nrow(phenotypes),"records read from the phenotype file after alignment with genotypes",sep=" "))
 
-## convert score to factor
-phenotypes <- mutate(phenotypes, !!as.name(config$trait) := factor(!!as.name(config$trait)))
+## convert score to factor [if trait is binomial]
+if (config$type == "binomial") phenotypes <- mutate(phenotypes, !!as.name(config$trait) := factor(!!as.name(config$trait)))
 
 #################
 ## kinship matrix
@@ -169,35 +173,60 @@ if (config$model == "caret") {
   
   ## MAKE PREDICTIONS ----------------------------------------------------------
   predictions_lasso <- lasso_fit %>% predict(X_test)
-  confm = confusionMatrix(data = predictions_lasso, reference = y_test)
   
-  best_lambda = lasso_fit$finalModel$lambdaOpt
-  accuracy = confm$overall['Accuracy']
-  kappa = confm$overall['Kappa']
-  TPR = confm$byClass['Sensitivity']
-  TNR = confm$byClass['Specificity']
-  print(paste("overall accuracy", accuracy))
-  print(confm$table)
-  
-  res = data.frame("trait"=config$trait,
-                   "train_split"=config$test_split,
-                   "nsamples"=nsamples,
-                   "nmarkers"=nmarkers,
-                   "normalise"=ifelse(config$normalise,"yes","no"),
-                   "lambda"=best_lambda,
-                   "accuracy"=accuracy,
-                   "kappa"=kappa,
-                   "TPR"=TPR,
-                   "TNR"=TNR,
-                   "n_pc"=config$npc,
-                   "model"="caret")
+  if(config$type == "binomial") { 
+    
+    confm = confusionMatrix(data = predictions_lasso, reference = y_test)
+    
+    best_lambda = lasso_fit$finalModel$lambdaOpt
+    accuracy = confm$overall['Accuracy']
+    kappa = confm$overall['Kappa']
+    TPR = confm$byClass['Sensitivity']
+    TNR = confm$byClass['Specificity']
+    print(paste("overall accuracy", accuracy))
+    print(confm$table)
+    
+    res = data.frame("trait"=config$trait,
+                     "train_split"=config$test_split,
+                     "nsamples"=nsamples,
+                     "nmarkers"=nmarkers,
+                     "normalise"=ifelse(config$normalise,"yes","no"),
+                     "lambda"=best_lambda,
+                     "accuracy"=accuracy,
+                     "kappa"=kappa,
+                     "TPR"=TPR,
+                     "TNR"=TNR,
+                     "n_pc"=config$npc,
+                     "model"="caret")
+  } else {
+    
+    pearson = as.numeric(cor(y_predicted, y_test, method = "pearson")[1,1])
+    spearman = as.numeric(cor(y_predicted, y_test, method = "spearman")[1,1])
+    rmse = sqrt(sum((y_predicted-y_test)^2)/length(y_test))
+    pct_error = rmse/mean(y_test)
+    best_lambda = best_lambda
+    
+    res = data.frame("trait"=config$trait,
+                     "train_split"=config$test_split,
+                     "nsamples"=nsamples,
+                     "nmarkers"=nmarkers,
+                     "normalise"=ifelse(config$normalise,"yes","no"),
+                     "lambda"=best_lambda,
+                     "pearson"=pearson,
+                     "spearman"=spearman,
+                     "RMSE"=rmse,
+                     "pct_error"=pct_error,
+                     "n_pc"=config$npc,
+                     "model"="caret")
+  }
   
   writeLines(" - saving results to file")
-  fname = paste(config$base_folder, "results_lasso.csv", sep="/")
-  if(file.exists(fname)) {
+  fname = paste("results_lasso_", config$trait, ".csv", sep="")
+  filepath = paste(config$base_folder, fname, sep="/")
+  if(file.exists(filepath)) {
     
-    fwrite(x = res, file = fname, append = TRUE)
-  } else fwrite(x = res, file = fname)
+    fwrite(x = res, file = filepath, append = TRUE)
+  } else fwrite(x = res, file = filepath)
   
   ## MODEL COEFFICIENTS ----------------------------------------------------------
   writeLines(" - extracting model coefficients")
@@ -205,13 +234,14 @@ if (config$model == "caret") {
   lasso_coefs = filter(lasso_coefs, s1 != 0, !(row.names(lasso_coefs) %in% c("(Intercept)")))
   
   writeLines(" - saving model coefficients to 'dictionary'")
-  fname = paste(config$base_folder, "dict_coefs.RData", sep="/")
+  fname = paste("dict_coefs_", config$trait, ".RData", sep = "")
+  fpath = paste(config$base_folder, fname, sep="/")
   
   for (name in rownames(lasso_coefs)) {
     
-    if(file.exists(fname)) {
+    if(file.exists(fpath)) {
       
-      load(fname)
+      load(fpath)
       if (name %in% names(dict_coefs)) {
         
         dict_coefs[name] = dict_coefs[name] + 1
@@ -224,7 +254,7 @@ if (config$model == "caret") {
         dict_coefs[name] = dict_coefs[name] + 1
       } else dict_coefs[name] = 1
     }
-    save(dict_coefs, file = fname)
+    save(dict_coefs, file = fpath)
   }
 }
 
@@ -255,7 +285,7 @@ if (config$model == "glmnet") {
   y_test <- select(phenotypes[-inTrain], all_of(config$trait)) %>% pull()
   
   #perform k-fold cross-validation to find optimal lambda value
-  cv_model <- cv.glmnet(x = X_train, y = y_train, alpha = 1, nfolds = config$nfolds, type.measure = "class", family = "binomial")
+  cv_model <- cv.glmnet(x = X_train, y = y_train, alpha = 1, nfolds = config$nfolds, type.measure = metric, family = config$type)
   plot(cv_model)
   
   #find optimal lambda value that minimizes test MSE
@@ -263,37 +293,65 @@ if (config$model == "glmnet") {
   print(paste("best lambda value is: ", best_lambda))
   
   #find coefficients of best model
-  best_model <- glmnet(x = X_train, y = y_train, alpha = 1, lambda = best_lambda, family = "binomial")
+  best_model <- glmnet(x = X_train, y = y_train, alpha = 1, lambda = best_lambda, family = config$type)
   
-  y_predicted <- predict(best_model, s = best_lambda, newx = X_test, type = "class")
-  y_pred = as.factor(y_predicted[,1])
-  confm <- confusionMatrix(data = y_pred, reference = y_test)
+  y_predicted <- predict(best_model, s = best_lambda, newx = X_test, type = "response")
   
-  best_lambda = best_lambda
-  accuracy = confm$overall['Accuracy']
-  kappa = confm$overall['Kappa']
-  TPR = confm$byClass['Sensitivity']
-  TNR = confm$byClass['Specificity']
-  print(confm$table)
-  
-  res = data.frame("trait"=config$trait,
-                   "train_split"=config$test_split,
-                   "nsamples"=nsamples,
-                   "nmarkers"=nmarkers,
-                   "normalise"=ifelse(config$normalise,"yes","no"),
-                   "lambda"=best_lambda,
-                   "accuracy"=accuracy,
-                   "kappa"=kappa,
-                   "TPR"=TPR,
-                   "TNR"=TNR,
-                   "n_pc"=config$npc,
-                   "model"="glmnet")
-  
-  fname = paste(config$base_folder, "results_lasso.csv", sep="/")
-  if(file.exists(fname)) {
+  if(config$type == "binomial") {
     
-    fwrite(x = res, file = fname, append = TRUE)
-  } else fwrite(x = res, file = fname)
+    y_pred = as.factor(y_predicted[,1])
+    confm <- confusionMatrix(data = y_pred, reference = y_test)
+    
+    best_lambda = best_lambda
+    accuracy = confm$overall['Accuracy']
+    kappa = confm$overall['Kappa']
+    TPR = confm$byClass['Sensitivity']
+    TNR = confm$byClass['Specificity']
+    print(confm$table)
+    
+    res = data.frame("trait"=config$trait,
+                     "train_split"=config$test_split,
+                     "nsamples"=nsamples,
+                     "nmarkers"=nmarkers,
+                     "normalise"=ifelse(config$normalise,"yes","no"),
+                     "lambda"=best_lambda,
+                     "accuracy"=accuracy,
+                     "kappa"=kappa,
+                     "TPR"=TPR,
+                     "TNR"=TNR,
+                     "n_pc"=config$npc,
+                     "model"="glmnet")
+  } else {
+    
+    pearson = as.numeric(cor(y_predicted, y_test, method = "pearson")[1,1])
+    spearman = as.numeric(cor(y_predicted, y_test, method = "spearman")[1,1])
+    rmse = sqrt(sum((y_predicted-y_test)^2)/length(y_test))
+    pct_error = rmse/mean(y_test)
+    best_lambda = best_lambda
+    
+    res = data.frame("trait"=config$trait,
+                     "train_split"=config$test_split,
+                     "nsamples"=nsamples,
+                     "nmarkers"=nmarkers,
+                     "normalise"=ifelse(config$normalise,"yes","no"),
+                     "lambda"=best_lambda,
+                     "pearson"=pearson,
+                     "spearman"=spearman,
+                     "RMSE"=rmse,
+                     "pct_error"=pct_error,
+                     "n_pc"=config$npc,
+                     "model"="glmnet")
+  }
+
+  
+
+  
+  fname = paste("results_lasso_", config$trait, ".csv", sep="")
+  filepath = paste(config$base_folder, fname, sep="/")
+  if(file.exists(filepath)) {
+    
+    fwrite(x = res, file = filepath, append = TRUE)
+  } else fwrite(x = res, file = filepath)
   
   ## MODEL COEFFICIENTS ----------------------------------------------------------
   writeLines(" - extracting model coefficients")
@@ -301,13 +359,14 @@ if (config$model == "glmnet") {
   lasso_coefs = filter(lasso_coefs, s0 != 0, !(row.names(lasso_coefs) %in% c("(Intercept)")))
   
   writeLines(" - saving model coefficients to 'dictionary'")
-  fname = paste(config$base_folder, "dict_coefs.RData", sep="/")
+  fname = paste("dict_coefs_", config$trait, ".RData", sep = "")
+  fpath = paste(config$base_folder, fname, sep="/")
   
   for (name in rownames(lasso_coefs)) {
     
-    if(file.exists(fname)) {
+    if(file.exists(fpath)) {
       
-      load(fname)
+      load(fpath)
       if (name %in% names(dict_coefs)) {
         
         dict_coefs[name] = dict_coefs[name] + 1
@@ -320,7 +379,7 @@ if (config$model == "glmnet") {
         dict_coefs[name] = dict_coefs[name] + 1
       } else dict_coefs[name] = 1
     }
-    save(dict_coefs, file = fname)
+    save(dict_coefs, file = fpath)
   }
 }
 
