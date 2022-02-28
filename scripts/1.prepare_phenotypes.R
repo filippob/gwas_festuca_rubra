@@ -4,6 +4,9 @@
 library("tidyverse")
 library("data.table")
 
+## parameters
+exclude_target_locality = c("Lavisdalen","Ulvehaugen") ## vector or NULL
+
 ## read and transform
 print("reading in the phenotypic data ...")
 metadata <- readxl::read_xlsx("288_samples_STR_ALL-final2.xlsx", sheet = 2)
@@ -20,8 +23,16 @@ metadata <- metadata %>%
          warm_wet = interaction(warmer,wetter),
          temp_moist = interaction(original_temperature, original_moisture))
 
+if (length(exclude_target_locality) > 0) {
+  
+  writeLines(" - removing unnecessary samples ")
+  print(paste("samples to remove: ", exclude_target_locality, collapse = ","))
+  metadata = filter(metadata, !(locality_target %in% exclude_target_locality))
+  print(paste("n. of records left:", nrow(metadata)))
+}
+
 metadata <- metadata %>%
-  select(`sample no.`, warmer, wetter, warm_wet,origin) %>%
+  select(`sample no.`, warmer, wetter, warm_wet,origin, targetTemp, targetMois) %>%
   rename(sample = `sample no.`)
 
 ## write out file
