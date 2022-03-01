@@ -46,10 +46,10 @@ dataset = basename(config$genotype_file)
 print("now reading in the data ...")
 ### genotypes
 genotypes <- fread(config$genotype_file, header = TRUE)
-snp_matrix = genotypes[,-c(1:7)]
+snp_matrix = genotypes[,-c(1:8)]
 print(paste(nrow(snp_matrix),"records read from the phenotype file",sep=" "))
-SNP_INFO <- genotypes[,c(1,2,4)]
-SNP_INFO <- mutate(SNP_INFO, snp = paste(contig,start_pos,sequence,sep="_")) %>% dplyr::select(c(contig,snp,start_pos))
+SNP_INFO <- genotypes[,1:6]
+SNP_INFO <- SNP_INFO %>% dplyr::select(c(contig,marker,start_pos))
 names(SNP_INFO) <- c("Chr","SNP","Pos")
 
 matg <- t(as.matrix(snp_matrix))
@@ -116,6 +116,7 @@ res = data.frame("SNP"=NULL, "effect"=NULL,"pvalue"=NULL)
 
 for(i in 1:ncol(matg)) {
   
+  if (i %% 100 = 0) print(paste("Analysing marker n.", i))
   df$snp <- matg[,i]
   snp_name <- colnames(matg)[i]
   

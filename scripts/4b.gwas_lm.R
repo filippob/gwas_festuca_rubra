@@ -17,7 +17,7 @@ if (length(args) == 1){
     base_folder = '~/Documents/zuzana_festuca_rubra',
     genotype_file = 'filtered_genotypes.csv',
     phenotype_file = 'phenotypes.csv',
-    trait = 'targetMois',
+    trait = 'targetTemp',
     npc = 4, ## n. of PCs to include
     force_overwrite = FALSE
   ))
@@ -46,10 +46,10 @@ dataset = basename(config$genotype_file)
 print("now reading in the data ...")
 ### genotypes
 genotypes <- fread(config$genotype_file, header = TRUE)
-snp_matrix = genotypes[,-c(1:7)]
+snp_matrix = genotypes[,-c(1:8)]
 print(paste(nrow(snp_matrix),"records read from the phenotype file",sep=" "))
-SNP_INFO <- genotypes[,c(1,2,4)]
-SNP_INFO <- mutate(SNP_INFO, snp = paste(contig,start_pos,sequence,sep="_")) %>% dplyr::select(c(contig,snp,start_pos))
+SNP_INFO <- genotypes[,1:6]
+SNP_INFO <- SNP_INFO %>% dplyr::select(c(contig,marker,start_pos))
 names(SNP_INFO) <- c("Chr","SNP","Pos")
 
 matg <- t(as.matrix(snp_matrix))

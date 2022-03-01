@@ -8,7 +8,7 @@ args = commandArgs(trailingOnly=TRUE)
 if (length(args) == 1){
   #loading the parameters
   source(args[1])
-}else{
+} else {
   #this is the default configuration, used for development and debug
   writeLines('Using default config')
   
@@ -19,8 +19,9 @@ if (length(args) == 1){
     base_folder = '~/Documents/zuzana_festuca_rubra',
     genotype_file = 'filtered_genotypes.csv',
     phenotype_file = 'phenotypes.csv',
-    trait = 'wetter',
-    npc = 4, ## n. of PCs to include
+    trait = 'targetMois',
+    npc = 4, ## n. of PCs to include,
+    use_kinship = TRUE,
     force_overwrite = FALSE
   ))
   
@@ -41,6 +42,7 @@ print(paste("genotype file name:",config$genotype_file))
 print(paste("phenotype file name:",config$phenotype_file))
 print(paste("trait:",config$trait))
 print(paste("number of principal components to include:",config$npc))
+print(paste("Use kinship:",config$use_kinship))
 
 dataset = basename(config$genotype_file)
 
@@ -49,14 +51,13 @@ writeLines(" - now reading in the genotypic data ...")
 ### genotypes
 genotypes <- fread(config$genotype_file, header = TRUE)
 print(paste(nrow(genotypes),"records read from the genotype file",sep=" "))
-genotypes <- mutate(genotypes, marker_name = paste(contig,start_pos,end_pos,sequence, sep = "_"))
 SNP_INFO <- genotypes %>%
-  dplyr::select(c(marker_name,contig,start_pos,end_pos)) %>%
+  dplyr::select(c(marker,contig,start_pos,end_pos)) %>%
   mutate(Position = (start_pos+end_pos)/2) %>%
   dplyr::select(-c(start_pos,end_pos)) %>%
-  rename(marker = marker_name, Chrom = contig)
+  rename(Chrom = contig)
 
-temp <- genotypes[,-c(1:7,ncol(genotypes)), with = FALSE]
+temp <- genotypes[,-c(1:8,ncol(genotypes)), with = FALSE]
 matg <- t(as.matrix(temp))
 colnames(matg) <- SNP_INFO$marker
 rownames(matg) <- colnames(temp)
@@ -66,9 +67,9 @@ rm(temp)
 ## subsampling
 ################
 writeLines(" - now subsampling the marker loci ...")
-vec <- sample(1:ncol(matg),2000)
-matg <- matg[,vec]
-SNP_INFO <- SNP_INFO[vec,]
+#vec <- sample(1:ncol(matg),2000)
+#matg <- matg[,vec]
+#SNP_INFO <- SNP_INFO[vec,]
 summary(colSums(matg)/nrow(matg))
 ####
 
@@ -100,13 +101,6 @@ pc <- prcomp(matg)
 ## add first n principal components to the file of phenotypes
 phenotypes <- cbind.data.frame(phenotypes,pc$x[,1:config$npc])
 
-## kinship matrix
-writeLines(" - calculating the kinship matrix")
-K <- fread("kinship_vr.csv", header = TRUE)
-names(K) <- phenotypes$id
-K <- as.matrix(K)
-rownames(K) <- colnames(K)
-
 ## marker matrix
 X <- as.matrix(matg)
 rownames(X) <- phenotypes$id
@@ -126,13 +120,33 @@ fmod <- as.formula(
         paste(covs, collapse = "+"),
         sep = " ~ "))
 
-mix_mod <- GWAS(fmod,
-                random = ~vs(id, Gu=K),
-                rcov = ~units,
-                data = P,
-                M = X,
-                gTerm = "u:id", 
-                verbose = TRUE)
+if (config$use_kinship) {
+  print("using kinship matrix in the GWAS model")
+  
+  ## kinship matrix
+  writeLines(" - calculating the kinship matrix")
+  K <- fread("kinship_vr.csv", header = TRUE)
+  names(K) <- phenotypes$id
+  K <- as.matrix(K)
+  rownames(K) <- colnames(K)
+  
+  mix_mod <- GWAS(fmod,
+                  random = ~vs(id, Gu=K),
+                  rcov = ~units,
+                  data = P,
+                  M = X,
+                  gTerm = "u:id", 
+                  verbose = TRUE)
+} else {
+  print("NOT using kinship matrix in the GWAS model")
+  mix_mod <- GWAS(fmod,
+                  random = ~vs(id),
+                  rcov = ~units,
+                  data = P,
+                  M = X,
+                  gTerm = "u:id", 
+                  verbose = TRUE) 
+}
 
 ###########
 ### RESULTS
