@@ -40,6 +40,9 @@ vec <- rowSums(M[,-c(1:7)]) > 3
 M <- M[vec,]
 print(paste(nrow(M),"markers left after filtering for frequency"))
 
+## make marker name
+M <- mutate(M, marker = paste(contig,start_pos,end_pos,sequence, sep = "_")) %>% relocate(marker)
+
 ## write out data
 writeLines(" - writing out the data ... ")
 fwrite(x = M, file = "filtered_genotypes.csv", sep = ",", col.names = TRUE)
