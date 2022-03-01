@@ -3,7 +3,10 @@
 library("tidyverse")
 library("data.table")
 
+##############################
+## parameters
 significance_threshold = 1e-3
+##############################
 
 ## POWER
 source("~/Dropbox/cursos/gwas_berlin2020/introduction_to_gwas/5.power_and_significance/power_calc_functions.R")
@@ -79,8 +82,9 @@ ggsave(filename = "results/significant_snps.png", plot = p, device = "png", widt
 
 dd <-filtered_results %>%
   group_by(Chrom, model) %>%
-  summarise(pvalue, `-log10` = -log(pvalue), posterior_odds) %>%
-  fwrite("results/table_significant_ssr.csv", sep = ",")
+  summarise(pvalue, `-log10` = -log(pvalue), posterior_odds)
+
+dd %>%  fwrite("results/table_significant_ssr.csv", sep = ",")
 
 fwrite(x = filtered_results, file = "results/significant_ssr_extended.csv", sep=",")
 
@@ -103,7 +107,7 @@ posterior_odds = prior*power/p_value ## P(true_assoc)/(1-P(true_assoc))
 ### get significant results ###
 ### read pvalues
 # target_temp
-results <- fread("results/filtered_genotypes.csv_targetTemp_GWAS_glm.results")
+results <- fread("results/filtered_genotypes.csv_targetTemp_GWAS_lm.results")
 filtered_results <- filter(results, pvalue < significance_threshold) %>% rename(Chrom = Chr, Position = Pos)
 filtered_results$posterior_odds = (prior*power)/filtered_results$pvalue
 filtered_results$model = "temperature"
@@ -130,12 +134,20 @@ p <- p + facet_wrap(~Chrom)
 p <- p + theme(axis.text.x = element_text(angle = 90))
 # p
 
-ggsave(filename = "results/significant_snps_temp_humidity.png", plot = p, device = "png", width = 10, height = 7)
+ggsave(filename = "results/significant_snps_temp_humidity.png", plot = p, device = "png", width = 10, height = 12)
 
 dd <-filtered_results %>%
+  select(-N) %>%
   group_by(Chrom, model) %>%
-  summarise(pvalue, `-log10` = -log(pvalue), posterior_odds) %>%
-  fwrite("results/table_significant_ssr_temp_mois.csv", sep = ",")
+  summarise(pvalue, `-log10` = -log(pvalue), posterior_odds)
+
+dd %>%  fwrite("results/table_significant_ssr_temp_mois.csv", sep = ",")
 
 fwrite(x = filtered_results, file = "results/significant_ssr_extended_temp_mois.csv", sep=",")
 
+
+#### compare lm and sommer
+lm_results <- fread("results/filtered_genotypes.csv_targetMois_GWAS_lm.results")
+sommer_res = fread("results/filtered_genotypes.csv_targetMois_GWAS_sommer.results")
+
+sum(sommer_res$marker %in% lm_results$SNP)
