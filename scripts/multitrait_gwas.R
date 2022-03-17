@@ -19,8 +19,8 @@ if (length(args) == 1){
     genotype_file = 'filtered_genotypes.csv',
     phenotype_file = 'phenotypes.csv',
     traits = 'targetMois,targetTemp',
-    npc = 4, ## n. of PCs to include,
-    use_kinship = FALSE,
+    npc = 2, ## n. of PCs to include,
+    use_kinship = TRUE,
     force_overwrite = FALSE
   ))
   
@@ -131,19 +131,15 @@ fmod <- as.formula(
 
 if (config$use_kinship) {
   print("using kinship matrix in the GWAS model")
+  print("!! WARNING: error messages may be due to too many effects in the fixed part of the model (e.g. too many PCs) !!")
   
   ## kinship matrix
   writeLines(" - calculating the kinship matrix")
-  K <- fread("kinship_vr.csv", header = TRUE)
-  vec <- colnames(K) %in% phenotypes$sample
-  K <- K[vec,vec, with=FALSE]
-  names(K) <- phenotypes$id
-  K <- as.matrix(K)
-  rownames(K) <- colnames(K)
+  K = A.mat(X)
   
-  mix_mod <- GWAS(fmod,
-                  # random = ~vs(id, Gu=K),
-                  random = ~vs(id, Gtc=unsm(2)),
+  mix_mod <- GWAS(
+                  fmod,
+                  random = ~vs(id, Gu=K),
                   rcov = ~units,
                   data = P,
                   M = X,
