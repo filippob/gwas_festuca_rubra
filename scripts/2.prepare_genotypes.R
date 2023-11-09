@@ -4,6 +4,9 @@
 library("tidyverse")
 library("data.table")
 
+## parameters
+phenotype_file = "phenotypes_morphometry.csv"
+
 ## read and transform
 writeLines(" - reading in the genotypic data ...")
 unfiltered_genotypes <- readxl::read_xlsx("unfiltered.xlsx", sheet = 1, col_names = TRUE)
@@ -17,7 +20,7 @@ colnames(M) <- gsub("_.*$","",colnames(M))
 
 ## match between genotypes ans phenotypes
 writeLines(" - matching with phenotypes ...")
-phenotypes <- fread("phenotypes.csv")
+phenotypes <- fread(phenotype_file)
 vec <- colnames(M) %in% phenotypes$sample
 M <- M[,vec]
 print(paste(ncol(M), "samples left after matching genotypes and phenotypes"))
