@@ -1,5 +1,7 @@
 #!/usr/bin/Rscript
 ## R script to prepare the file of phenotypes for GWAS  
+## phenotypes here are environmental conditions
+## in particular, for this project, these are the duration of drought in years
 
 library("tidyverse")
 library("data.table")
