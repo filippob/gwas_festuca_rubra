@@ -18,6 +18,7 @@ if (length(args) == 1){
     genotype_file = 'filtered_genotypes.csv',
     phenotype_file = 'phenotypes.csv',
     trait = 'Age',
+    kinship_file = 'kinship_vr.csv',
     npc = 4, ## n. of PCs to include
     force_overwrite = FALSE
   ))
@@ -100,7 +101,7 @@ print(paste(nrow(phenotypes),"records read from the phenotype file after alignme
 
 ## kinship matrix
 writeLines(' - reading and preparing the kinship matrix')
-K <- fread(file.path(config$base_folder, "kinship_gower.csv"), sep=",", header = TRUE)
+K <- fread(file.path(config$base_folder, config$kinship_file), sep=",", header = TRUE)
 
 vec <- colnames(K) %in% phenotypes$sample
 K <- K[vec,vec, with=FALSE]
