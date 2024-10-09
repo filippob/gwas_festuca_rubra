@@ -19,7 +19,7 @@ if (length(args) == 1){
     phenotype_file = 'phenotypes.csv',
     trait = 'Age',
     kinship_file = 'kinship_gower.csv',
-    npc = 4, ## n. of PCs to include
+    npc = 0, ## n. of PCs to include
     force_overwrite = FALSE
   ))
   
@@ -129,10 +129,13 @@ dev.off()
 #########################
 ## Principal Components
 #########################
-writeLines(' - calculating principal components')
-pc <- prcomp(matg)
 n <- config$npc ## n. of principal components to use for GWAS
-phenotypes <- cbind.data.frame(phenotypes,pc$x[,1:n])
+
+if (n > 0) {
+  writeLines(' - calculating principal components')
+  pc <- prcomp(matg)
+  phenotypes <- cbind.data.frame(phenotypes,pc$x[,1:n])
+}
 
 ###################
 ## Running the GWAS
@@ -183,18 +186,18 @@ mapf <- filter(mapf, phenotype < Inf)
 mapf <- mapf |> rename(Chrom = Chr, Position = Pos, p.val = pvalue)
 
 fname = paste(dataset,config$trait,"manhattan_sommer.png",sep="_")
-png(fname)
+png(filename = file.path(config$base_folder,"results",fname))
 sommer::manhattan(mapf, pch=20,cex=.75, PVCN = "phenotype")
 dev.off()
 
 ## rename P to log_p (as it is) and add the column with p-values
 names(mapf)[4] <- "log_p"
 fname = paste(dataset,config$trait,"GWAS_sommer.results",sep="_")
-fwrite(x = mapf, file = fname)
+fwrite(x = mapf, file = file.path(config$base_folder,"results",fname))
 
 ## qq-plot
 fname = paste(dataset,config$trait,"qqplot_sommer.png",sep="_")
-png(fname, width = 600, height = 600)
+png(filename = file.path(config$base_folder,"results",fname), width = 600, height = 600)
 qqman::qq(mapf$p.val)
 dev.off()
 
