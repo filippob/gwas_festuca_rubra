@@ -3,6 +3,7 @@
 ## phenotypes here are environmental conditions
 ## in particular, for this project, these are the duration of drought in years
 
+library("knitr")
 library("tidyverse")
 library("data.table")
 
@@ -30,12 +31,21 @@ if (excl_sample) {
   metadata <- metadata |> filter(!(`sample no.` %in% excl_samples$`samples to be excluded`))  
 }
 
-metadata <- metadata %>%
-  select(-set) %>%
-  rename(sample = code) %>%
-  filter(measurement == 2) %>%
-  select(-measurement)
+print(paste("number of unique individuals:", length(unique(metadata$code))))
 
+metadata |>
+  group_by(measurement, set) |>
+  summarise(N =n()) |>
+  kable()
+
+writeLines(" - getting the average across measurements and sets")
+metadata <- metadata |>
+  select(-c(measurement, set)) |>
+  group_by(code) |>
+  summarise(across(where(is.numeric), \(x) mean(x, na.rm=TRUE))) |>
+  rename(sample = code)
+
+writeLines(" - normalising the numerical phenotypes (standardization)")
 X <- metadata[,-1]
 varnames = names(X)
 std = X |> summarise(across(everything(), sd))
