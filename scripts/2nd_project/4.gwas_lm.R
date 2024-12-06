@@ -16,9 +16,11 @@ if (length(args) == 1){
   config = rbind(config, data.frame(
     base_folder = '~/Documents/zuzana_festuca_rubra/2nd_project',
     genotype_file = 'filtered_genotypes.csv',
-    phenotype_file = 'phenotypes.csv',
-    trait = 'Age',
+    phenotype_file = 'phenotypes_morphology.csv',
+    trait = 'osmo-stand',
+    covariate = '',
     npc = 4, ## n. of PCs to include
+    pc_file = "results/pc.csv",
     force_overwrite = FALSE
   ))
   
@@ -56,9 +58,11 @@ colnames(matg) <- SNP_INFO$SNP
 rownames(matg) <- colnames(snp_matrix)
 
 somme = colSums(matg)
-min_count = round(nrow(matg)/20, digits = 0)
+min_count = round(nrow(matg)/25, digits = 0)
 vec = (somme > min_count)
 matg = matg[,vec]
+
+SNP_INFO = SNP_INFO[vec,]
 
 print(paste(nrow(SNP_INFO),"SNPs read from the map file",sep=" "))
 
@@ -87,7 +91,12 @@ if ((ncol(matg)) != nrow(SNP_INFO)) {
 ### phenotypes
 print("now reading in the binary phenotype ...")
 phenotypes <- fread(file.path(config$base_folder, config$phenotype_file))
-phenotypes <- dplyr::select(phenotypes, c(sample, Block, !!as.name(config$trait)))
+if(is.na(config$covariate) | config$covariate == "") {
+  
+  phenotypes <- dplyr::select(phenotypes, c(sample, !!as.name(config$trait)))
+} else phenotypes <- dplyr::select(phenotypes, c(sample, !!as.name(config$trait), !!as.name(config$covariate)))
+
+# phenotypes <- dplyr::select(phenotypes, c(sample, Block, !!as.name(config$trait)))
 head(phenotypes)
 print(paste(nrow(phenotypes),"records read from the phenotype file",sep=" "))
 
@@ -112,17 +121,44 @@ dev.off()
 #########################
 ## Principal Components
 #########################
-writeLines(' - calculating principal components')
 vec <- rownames(matg) %in% phenotypes$sample
 matg <- matg[vec,]
 
-## data normalization
-matg = matg/colSums(matg)
+if (config$pc_file == "" | is.null(config$pc_file)) {
+  
+  writeLines(' - calculating principal components')
+  
+  ## data normalization
+  matg = matg/colSums(matg)
+  
+  pc <- prcomp(matg)
+  phenotypes <- phenotypes %>% dplyr::rename(phenotype = !!as.name(config$trait))
+  n <- config$npc ## n. of principal components to use for GWAS
+  
+  pc_selected <- as.data.frame(pc$x[,1:n])
+  pc_selected$sample = row.names(pc_selected)
+  fname <- file.path(config$base_folder,"results/pc.csv")
+  fwrite(x = pc_selected, file = fname)
+  
+  phenotypes <- cbind.data.frame(phenotypes,pc$x[,1:n]) 
+} else {
+  
+  fname = file.path(config$base_folder, config$pc_file)
+  pc = fread(fname)
+  
+  phenotypes <- phenotypes %>% dplyr::rename(phenotype = !!as.name(config$trait))
+  phenotypes <- inner_join(phenotypes, pc, by = "sample")
+}
 
-pc <- prcomp(matg)
-phenotypes <- phenotypes %>% dplyr::rename(phenotype = !!as.name(config$trait))
-n <- config$npc ## n. of principal components to use for GWAS
-phenotypes <- cbind.data.frame(phenotypes,pc$x[,1:n])
+head(phenotypes)
+
+## data cleaning
+writeLines(" - cleaning data: removing alleles with zero count in all samples")
+nsample = nrow(matg)
+freqs = colSums(matg)/nsample
+vec <- (freqs < 0.95 & freqs > 0.05)
+matg <- matg[,vec]
+print(paste(ncol(matg), "markers left after cleaning"))
 
 
 ###################
